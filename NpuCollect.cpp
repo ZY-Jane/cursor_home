@@ -1,4 +1,4 @@
-// NpuCollect.cpp — collect phase with private-member C++ classes.
+// NpuCollect.cpp — collect phase: fill info, emit buffer, store buffer.
 
 #include "NpuCollect.h"
 
@@ -6,23 +6,40 @@ using namespace mlir;
 using namespace mlir::acuity::npu;
 
 LogicalResult
-mlir::acuity::npu::fillTriggerLoadState(TriggerLoadState &out,
+mlir::acuity::npu::fillTriggerLoadState(TriggerLoadState &info,
                                         nn::TriggerOp trigger,
                                         const HardwareInfo &hwInfo,
                                         int64_t coreId) {
-  out = TriggerLoadState();
-  out.setCoreId(coreId);
-  out.setHwInfo(&hwInfo);
+  info = TriggerLoadState();
+  info.setCoreId(coreId);
 
   // TODO: wire to your ODS getters, e.g.:
-  // out.setEventId(trigger.getEventId());
-  // out.setMultiCoreSync(...);
+  // info.setEventId(trigger.getEventId());
+  // info.setMultiCoreSync(...);
   // Value cmd = trigger.getCmd();
-  // out.setCommandBufferSize(...);
-  // out.setCmdOffsetInConst(...);
-  // out.setCmdBufferAddr(0);
+  // info.setCommandBufferSize(...);
+  // info.setCmdOffsetInConst(...);
+  // info.setCmdBufferAddr(0);
+  // hwInfo is used here to derive sizes / flags, not stored on info.
 
   (void)trigger;
+  (void)hwInfo;
+  return success();
+}
+
+LogicalResult
+mlir::acuity::npu::emitLoadState(const TriggerLoadState &info,
+                                 std::vector<uint8_t> &loadStateBuf) {
+  // Bridge to non-MLIR module, reading via getters:
+  // LoadStateInfo packed;
+  // packed.coreId = info.getCoreId();
+  // packed.cmdBufferAddr = info.getCmdBufferAddr();
+  // packed.commandBufferSize = info.getCommandBufferSize();
+  // packed.eventId = info.getEventId();
+  // packed.multiCoreSync = info.getMultiCoreSync();
+  // loadStateBuf = buildLoadState(packed);
+  (void)info;
+  loadStateBuf.clear();
   return success();
 }
 
@@ -35,17 +52,16 @@ mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
     if (!trigger)
       continue;
 
-    TriggerLoadState state;
-    if (failed(fillTriggerLoadState(state, trigger, hwInfo, coreId)))
+    TriggerLoadState info;
+    if (failed(fillTriggerLoadState(info, trigger, hwInfo, coreId)))
       return failure();
 
-    collector.add(
-        TriggerNbgEntry(collector.nextOrdinal(), &op, std::move(state)));
+    std::vector<uint8_t> loadStateBuf;
+    if (failed(emitLoadState(info, loadStateBuf)))
+      return failure();
 
-    // Optional early emit:
-    // if (failed(emitLoadStateToVector(collector.back().getState(),
-    //                                  collector.back().getLoadStateBuf())))
-    //   return failure();
+    collector.add(TriggerNbgEntry(collector.nextOrdinal(), &op,
+                                  std::move(loadStateBuf)));
   }
   return success();
 }
@@ -62,24 +78,11 @@ mlir::acuity::npu::collectNbgBlocks(Region &region, NpuCollector &collector,
 }
 
 LogicalResult
-mlir::acuity::npu::emitLoadStateToVector(const TriggerLoadState &state,
-                                         std::vector<uint8_t> &out) {
-  // Bridge to non-MLIR module, reading via getters:
-  // LoadStateInfo info;
-  // info.coreId = state.getCoreId();
-  // ...
-  // out = buildLoadState(info);
-  (void)state;
-  out.clear();
-  return success();
-}
-
-LogicalResult
 mlir::acuity::npu::serializeNbg(const NpuCollector &collector,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
   // for (const TriggerNbgEntry &e : collector.getTriggers()) {
-  //   use e.getOrdinal(), e.getState().getEventId(), e.getLoadStateBuf()
+  //   use e.getOrdinal(), e.getLoadStateBuf()
   // }
   (void)collector;
   return success();

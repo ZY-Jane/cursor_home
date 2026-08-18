@@ -1,5 +1,8 @@
 // NpuCollect.h
 // Collect-phase definitions for NPU NBG dump (C++ classes, private members).
+//
+// TriggerLoadState = field table for fill/emit only (not the collect result).
+// TriggerNbgEntry  = identity + loadStateBuf (the NBG payload).
 
 #pragma once
 
@@ -8,9 +11,12 @@
 #include <vector>
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/MutableArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/Region.h"
 #include "mlir/Support/LogicalResult.h"
 
 // Forward declarations — replace with your real headers.
@@ -27,25 +33,22 @@ namespace mlir {
 namespace acuity {
 namespace npu {
 
-/// Information for one trigger's loadState (not the binary buffer itself).
+/// Structured fields used to emit one trigger's loadState bytes.
+/// Not stored on the collector; fill fills it, emit consumes it.
 class TriggerLoadState {
 public:
   TriggerLoadState() = default;
 
-  TriggerLoadState(int64_t coreId, const HardwareInfo *hwInfo,
-                   uint64_t cmdBufferAddr, int64_t cmdOffsetInConst,
-                   uint32_t commandBufferSize, int64_t eventId,
-                   bool multiCoreSync)
-      : coreId_(coreId), hwInfo_(hwInfo), cmdBufferAddr_(cmdBufferAddr),
+  TriggerLoadState(int64_t coreId, uint64_t cmdBufferAddr,
+                   int64_t cmdOffsetInConst, uint32_t commandBufferSize,
+                   int64_t eventId, bool multiCoreSync)
+      : coreId_(coreId), cmdBufferAddr_(cmdBufferAddr),
         cmdOffsetInConst_(cmdOffsetInConst),
         commandBufferSize_(commandBufferSize), eventId_(eventId),
         multiCoreSync_(multiCoreSync) {}
 
   int64_t getCoreId() const { return coreId_; }
   void setCoreId(int64_t v) { coreId_ = v; }
-
-  const HardwareInfo *getHwInfo() const { return hwInfo_; }
-  void setHwInfo(const HardwareInfo *v) { hwInfo_ = v; }
 
   uint64_t getCmdBufferAddr() const { return cmdBufferAddr_; }
   void setCmdBufferAddr(uint64_t v) { cmdBufferAddr_ = v; }
@@ -64,7 +67,6 @@ public:
 
 private:
   int64_t coreId_ = 0;
-  const HardwareInfo *hwInfo_ = nullptr;
   uint64_t cmdBufferAddr_ = 0;
   int64_t cmdOffsetInConst_ = 0;
   uint32_t commandBufferSize_ = 0;
@@ -72,18 +74,20 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// One collected trigger: identity + info (+ optional already-emitted bytes).
+/// One collected trigger: identity + emitted loadState bytes (NBG payload).
 class TriggerNbgEntry {
 public:
   TriggerNbgEntry() = default;
 
   TriggerNbgEntry(int64_t ordinal, Operation *op, Location loc,
-                  TriggerLoadState state)
-      : ordinal_(ordinal), op_(op), loc_(loc), state_(std::move(state)) {}
+                  std::vector<uint8_t> loadStateBuf)
+      : ordinal_(ordinal), op_(op), loc_(loc),
+        loadStateBuf_(std::move(loadStateBuf)) {}
 
   /// Convenience: take loc from op (op must be non-null).
-  TriggerNbgEntry(int64_t ordinal, Operation *op, TriggerLoadState state)
-      : TriggerNbgEntry(ordinal, op, op->getLoc(), std::move(state)) {}
+  TriggerNbgEntry(int64_t ordinal, Operation *op,
+                  std::vector<uint8_t> loadStateBuf)
+      : TriggerNbgEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
 
   int64_t getOrdinal() const { return ordinal_; }
   void setOrdinal(int64_t v) { ordinal_ = v; }
@@ -94,12 +98,8 @@ public:
   Location getLoc() const { return loc_; }
   void setLoc(Location v) { loc_ = v; }
 
-  const TriggerLoadState &getState() const { return state_; }
-  TriggerLoadState &getState() { return state_; }
-  void setState(TriggerLoadState v) { state_ = std::move(v); }
-
-  const std::vector<uint8_t> &getLoadStateBuf() const { return loadStateBuf_; }
-  std::vector<uint8_t> &getLoadStateBuf() { return loadStateBuf_; }
+  ArrayRef<uint8_t> getLoadStateBuf() const { return loadStateBuf_; }
+  MutableArrayRef<uint8_t> getLoadStateBuf() { return loadStateBuf_; }
   void setLoadStateBuf(std::vector<uint8_t> v) {
     loadStateBuf_ = std::move(v);
   }
@@ -108,11 +108,10 @@ private:
   int64_t ordinal_ = -1;
   Operation *op_ = nullptr;
   Location loc_;
-  TriggerLoadState state_;
   std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Accumulates all NPU pieces before serialize → NBG blob.
+/// Accumulates NBG trigger payloads before serialize.
 class NpuCollector {
 public:
   NpuCollector() = default;
@@ -145,18 +144,22 @@ private:
 // Collect API — parallel to codegenBlocks / codegenBlockOps
 //===----------------------------------------------------------------------===//
 
-LogicalResult fillTriggerLoadState(TriggerLoadState &out, nn::TriggerOp trigger,
+/// Fill the field table from IR + hw. Does not write bytes.
+LogicalResult fillTriggerLoadState(TriggerLoadState &info,
+                                   nn::TriggerOp trigger,
                                    const HardwareInfo &hwInfo,
                                    int64_t coreId = 0);
+
+/// Write hardware loadState bytes from the field table into loadStateBuf.
+LogicalResult emitLoadState(const TriggerLoadState &info,
+                            std::vector<uint8_t> &loadStateBuf);
 
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 
 LogicalResult collectNbgBlockOps(Block &block, NpuCollector &collector,
-                                 const HardwareInfo &hwInfo, int64_t coreId = 0);
-
-LogicalResult emitLoadStateToVector(const TriggerLoadState &state,
-                                    std::vector<uint8_t> &out);
+                                 const HardwareInfo &hwInfo,
+                                 int64_t coreId = 0);
 
 LogicalResult serializeNbg(const NpuCollector &collector,
                            std::vector<uint8_t> &nbgOut);
