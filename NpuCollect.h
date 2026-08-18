@@ -1,8 +1,9 @@
 // NpuCollect.h
 // Collect-phase definitions for NPU NBG dump (C++ classes, private members).
 //
-// TriggerLoadState = field table for fill/emit only (not the collect result).
-// TriggerNbgEntry  = identity + loadStateBuf (the NBG payload).
+// TriggerParams   = fields extracted from IR/hw (input to emit).
+// loadStateBuf    = hardware bytes (the NBG payload).
+// TriggerNbgEntry = identity + loadStateBuf.
 
 #pragma once
 
@@ -33,15 +34,15 @@ namespace mlir {
 namespace acuity {
 namespace npu {
 
-/// Structured fields used to emit one trigger's loadState bytes.
-/// Not stored on the collector; fill fills it, emit consumes it.
-class TriggerLoadState {
+/// Parameters extracted from one TriggerOp + hw, used only to emit loadState.
+/// Not stored on the collector.
+class TriggerParams {
 public:
-  TriggerLoadState() = default;
+  TriggerParams() = default;
 
-  TriggerLoadState(int64_t coreId, uint64_t cmdBufferAddr,
-                   int64_t cmdOffsetInConst, uint32_t commandBufferSize,
-                   int64_t eventId, bool multiCoreSync)
+  TriggerParams(int64_t coreId, uint64_t cmdBufferAddr,
+                int64_t cmdOffsetInConst, uint32_t commandBufferSize,
+                int64_t eventId, bool multiCoreSync)
       : coreId_(coreId), cmdBufferAddr_(cmdBufferAddr),
         cmdOffsetInConst_(cmdOffsetInConst),
         commandBufferSize_(commandBufferSize), eventId_(eventId),
@@ -144,14 +145,13 @@ private:
 // Collect API — parallel to codegenBlocks / codegenBlockOps
 //===----------------------------------------------------------------------===//
 
-/// Fill the field table from IR + hw. Does not write bytes.
-LogicalResult fillTriggerLoadState(TriggerLoadState &info,
-                                   nn::TriggerOp trigger,
-                                   const HardwareInfo &hwInfo,
-                                   int64_t coreId = 0);
+/// Read IR + hw into TriggerParams. Does not write loadState bytes.
+LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
+                                const HardwareInfo &hwInfo,
+                                int64_t coreId = 0);
 
-/// Write hardware loadState bytes from the field table into loadStateBuf.
-LogicalResult emitLoadState(const TriggerLoadState &info,
+/// Pack TriggerParams into hardware loadState bytes.
+LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
