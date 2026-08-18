@@ -40,16 +40,20 @@ class TriggerParams {
 public:
   TriggerParams() = default;
 
-  TriggerParams(int64_t coreId, uint64_t cmdBufferAddr,
-                int64_t cmdOffsetInConst, uint32_t commandBufferSize,
-                int64_t eventId, bool multiCoreSync)
-      : coreId_(coreId), cmdBufferAddr_(cmdBufferAddr),
+  TriggerParams(int64_t coreId, const HardwareInfo *hwInfo,
+                uint64_t cmdBufferAddr, int64_t cmdOffsetInConst,
+                uint32_t commandBufferSize, int64_t eventId,
+                bool multiCoreSync)
+      : coreId_(coreId), hwInfo_(hwInfo), cmdBufferAddr_(cmdBufferAddr),
         cmdOffsetInConst_(cmdOffsetInConst),
         commandBufferSize_(commandBufferSize), eventId_(eventId),
         multiCoreSync_(multiCoreSync) {}
 
   int64_t getCoreId() const { return coreId_; }
   void setCoreId(int64_t v) { coreId_ = v; }
+
+  const HardwareInfo *getHwInfo() const { return hwInfo_; }
+  void setHwInfo(const HardwareInfo *v) { hwInfo_ = v; }
 
   uint64_t getCmdBufferAddr() const { return cmdBufferAddr_; }
   void setCmdBufferAddr(uint64_t v) { cmdBufferAddr_ = v; }
@@ -68,6 +72,7 @@ public:
 
 private:
   int64_t coreId_ = 0;
+  const HardwareInfo *hwInfo_ = nullptr;
   uint64_t cmdBufferAddr_ = 0;
   int64_t cmdOffsetInConst_ = 0;
   uint32_t commandBufferSize_ = 0;

@@ -12,6 +12,7 @@ mlir::acuity::npu::fillTriggerParams(TriggerParams &params,
                                      int64_t coreId) {
   params = TriggerParams();
   params.setCoreId(coreId);
+  params.setHwInfo(&hwInfo);
 
   // TODO: wire to your ODS getters, e.g.:
   // params.setEventId(trigger.getEventId());
@@ -20,10 +21,8 @@ mlir::acuity::npu::fillTriggerParams(TriggerParams &params,
   // params.setCommandBufferSize(...);
   // params.setCmdOffsetInConst(...);
   // params.setCmdBufferAddr(0);
-  // hwInfo is used here to derive sizes / flags, not stored on params.
 
   (void)trigger;
-  (void)hwInfo;
   return success();
 }
 
@@ -31,13 +30,14 @@ LogicalResult
 mlir::acuity::npu::emitLoadState(const TriggerParams &params,
                                  std::vector<uint8_t> &loadStateBuf) {
   // Bridge to non-MLIR module, reading via getters:
+  // const HardwareInfo *hw = params.getHwInfo();
   // LoadStateInfo packed;
   // packed.coreId = params.getCoreId();
   // packed.cmdBufferAddr = params.getCmdBufferAddr();
   // packed.commandBufferSize = params.getCommandBufferSize();
   // packed.eventId = params.getEventId();
   // packed.multiCoreSync = params.getMultiCoreSync();
-  // loadStateBuf = buildLoadState(packed);
+  // loadStateBuf = buildLoadState(packed, hw);
   (void)params;
   loadStateBuf.clear();
   return success();
