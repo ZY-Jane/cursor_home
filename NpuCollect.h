@@ -3,7 +3,8 @@
 //
 // TriggerParams   = fields extracted from IR/hw (input to emit).
 // loadStateBuf    = filled by emitLoadState via reference, then moved onto entry.
-// TriggerNbgEntry = identity + loadStateBuf.
+// TriggerEntry    = one collected trigger (identity + loadStateBuf).
+// serializeNbg    = later: write NBG bytes from collected info.
 
 #pragma once
 
@@ -81,19 +82,19 @@ private:
 };
 
 /// One collected trigger: identity + loadState bytes filled by emitLoadState.
-class TriggerNbgEntry {
+class TriggerEntry {
 public:
-  TriggerNbgEntry() = default;
+  TriggerEntry() = default;
 
-  TriggerNbgEntry(int64_t ordinal, Operation *op, Location loc,
+  TriggerEntry(int64_t ordinal, Operation *op, Location loc,
                   std::vector<uint8_t> loadStateBuf)
       : ordinal_(ordinal), op_(op), loc_(loc),
         loadStateBuf_(std::move(loadStateBuf)) {}
 
   /// Convenience: take loc from op (op must be non-null).
-  TriggerNbgEntry(int64_t ordinal, Operation *op,
+  TriggerEntry(int64_t ordinal, Operation *op,
                   std::vector<uint8_t> loadStateBuf)
-      : TriggerNbgEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
+      : TriggerEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
 
   int64_t getOrdinal() const { return ordinal_; }
   void setOrdinal(int64_t v) { ordinal_ = v; }
@@ -128,22 +129,22 @@ public:
     return static_cast<int64_t>(triggers_.size());
   }
 
-  void add(TriggerNbgEntry entry) { triggers_.push_back(std::move(entry)); }
+  void add(TriggerEntry entry) { triggers_.push_back(std::move(entry)); }
 
   size_t size() const { return triggers_.size(); }
   bool empty() const { return triggers_.empty(); }
 
-  ArrayRef<TriggerNbgEntry> getTriggers() const { return triggers_; }
-  MutableArrayRef<TriggerNbgEntry> getTriggers() { return triggers_; }
+  ArrayRef<TriggerEntry> getTriggers() const { return triggers_; }
+  MutableArrayRef<TriggerEntry> getTriggers() { return triggers_; }
 
-  TriggerNbgEntry &getTrigger(size_t i) { return triggers_[i]; }
-  const TriggerNbgEntry &getTrigger(size_t i) const { return triggers_[i]; }
+  TriggerEntry &getTrigger(size_t i) { return triggers_[i]; }
+  const TriggerEntry &getTrigger(size_t i) const { return triggers_[i]; }
 
-  TriggerNbgEntry &back() { return triggers_.back(); }
-  const TriggerNbgEntry &back() const { return triggers_.back(); }
+  TriggerEntry &back() { return triggers_.back(); }
+  const TriggerEntry &back() const { return triggers_.back(); }
 
 private:
-  llvm::SmallVector<TriggerNbgEntry, 8> triggers_;
+  llvm::SmallVector<TriggerEntry, 8> triggers_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -159,17 +160,20 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
 LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
-/// Walk a dispatch (or any op with regions): collectNbg → collectNbgBlocks → collectNbgBlockOps.
-LogicalResult collectNbg(NpuCollector &collector, Operation *dispatchOp,
-                         const HardwareInfo &hwInfo, int64_t coreId = 0);
+/// Walk a dispatch: collectTriggers → collectTriggerBlocks → collectTriggerBlockOps.
+/// Collects trigger info (params + loadState). Does not write the NBG blob.
+LogicalResult collectTriggers(NpuCollector &collector, Operation *dispatchOp,
+                              const HardwareInfo &hwInfo, int64_t coreId = 0);
 
-LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
-                               const HardwareInfo &hwInfo, int64_t coreId = 0);
+LogicalResult collectTriggerBlocks(Region &region, NpuCollector &collector,
+                                   const HardwareInfo &hwInfo,
+                                   int64_t coreId = 0);
 
-LogicalResult collectNbgBlockOps(Block &block, NpuCollector &collector,
-                                 const HardwareInfo &hwInfo,
-                                 int64_t coreId = 0);
+LogicalResult collectTriggerBlockOps(Block &block, NpuCollector &collector,
+                                     const HardwareInfo &hwInfo,
+                                     int64_t coreId = 0);
 
+/// Later step: pack collected trigger info into an NBG buffer.
 LogicalResult serializeNbg(const NpuCollector &collector,
                            std::vector<uint8_t> &nbgOut);
 

@@ -38,7 +38,7 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
 }
 
 LogicalResult
-mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
+mlir::acuity::npu::collectTriggerBlockOps(Block &block, NpuCollector &collector,
                                       const HardwareInfo &hwInfo,
                                       int64_t coreId) {
   for (Operation &op : block) {
@@ -54,30 +54,30 @@ mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
     if (failed(emitLoadState(triggerParams, loadStateBuf)))
       return failure();
 
-    collector.add(TriggerNbgEntry(collector.nextOrdinal(), &op,
+    collector.add(TriggerEntry(collector.nextOrdinal(), &op,
                                   std::move(loadStateBuf)));
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::collectNbg(NpuCollector &collector, Operation *dispatchOp,
+mlir::acuity::npu::collectTriggers(NpuCollector &collector, Operation *dispatchOp,
                               const HardwareInfo &hwInfo, int64_t coreId) {
   if (!dispatchOp)
     return failure();
   for (Region &region : dispatchOp->getRegions()) {
-    if (failed(collectNbgBlocks(region, collector, hwInfo, coreId)))
+    if (failed(collectTriggerBlocks(region, collector, hwInfo, coreId)))
       return failure();
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::collectNbgBlocks(Region &region, NpuCollector &collector,
+mlir::acuity::npu::collectTriggerBlocks(Region &region, NpuCollector &collector,
                                     const HardwareInfo &hwInfo,
                                     int64_t coreId) {
   for (Block &block : region) {
-    if (failed(collectNbgBlockOps(block, collector, hwInfo, coreId)))
+    if (failed(collectTriggerBlockOps(block, collector, hwInfo, coreId)))
       return failure();
   }
   return success();
@@ -87,7 +87,7 @@ LogicalResult
 mlir::acuity::npu::serializeNbg(const NpuCollector &collector,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
-  // for (const TriggerNbgEntry &e : collector.getTriggers()) {
+  // for (const TriggerEntry &e : collector.getTriggers()) {
   //   use e.getOrdinal(), e.getLoadStateBuf()
   // }
   (void)collector;

@@ -1,8 +1,27 @@
-// Drop this into VipLiteCodegenPass::runOnOperation, in the callOp loop,
-// in place of collectNNNbg(npuTriggerCollector, dispatchOp).
+// Copy into VipLiteCodegenPass.cc
+// Replace collectNNNbg(...) with collectTriggers (info only; NBG is serializeNbg later).
 
-NpuCollector npuTriggerCollector;
-if (failed(collectNbg(npuTriggerCollector, dispatchOp, hwInfo))) {
-  signalPassFailure();
-  return;
+void runOnOperation() override {
+  auto funcOp = getOperation();
+  auto moduleOp = funcOp->getParentOfType<ModuleOp>();
+  SmallVector<Schedule::DispatchCallOp> callOps(
+      funcOp.getOps<Schedule::DispatchCallOp>());
+  MLIRContext *ctx = &getContext();
+  IRRewriter rewriter(ctx);
+
+  for (auto callOp : callOps) {
+    auto dispatchOp =
+        moduleOp.lookupSymbol<Schedule::DispatchOp>(callOp.getCallee());
+    AM_CHECK(dispatchOp, "Get dispatch callee fail: ", callOp.getCallee());
+
+    llvm::outs() << "\n==============codegen============\n";
+    dispatchOp.print(llvm::outs(), OpPrintingFlags().enableDebugInfo());
+    llvm::outs() << "\n==============codegen============\n";
+
+    NpuCollector npuTriggerCollector;
+    if (failed(collectNbg(npuTriggerCollector, dispatchOp, hwInfo))) {
+      signalPassFailure();
+      return;
+    }
+  }
 }
