@@ -1,5 +1,5 @@
 // Copy into VipLiteCodegenPass.cc
-// Replace collectNNNbg(...) with collectTriggers (info only; NBG is serializeNbg later).
+// Replace collectNNNbg(...) with collectLoadStates (info only; NBG is serializeNbg later).
 
 void runOnOperation() override {
   auto funcOp = getOperation();
@@ -19,7 +19,7 @@ void runOnOperation() override {
     llvm::outs() << "\n==============codegen============\n";
 
     NpuCollector npuTriggerCollector;
-    if (failed(collectNbg(npuTriggerCollector, dispatchOp, hwInfo))) {
+    if (failed(collectLoadStates(npuTriggerCollector, dispatchOp, hwInfo))) {
       signalPassFailure();
       return;
     }

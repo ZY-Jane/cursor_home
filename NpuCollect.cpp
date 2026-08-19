@@ -38,7 +38,7 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
 }
 
 LogicalResult
-mlir::acuity::npu::collectTriggerBlockOps(Block &block, NpuCollector &collector,
+mlir::acuity::npu::collectLoadStateBlockOps(Block &block, NpuCollector &collector,
                                       const HardwareInfo &hwInfo,
                                       int64_t coreId) {
   for (Operation &op : block) {
@@ -61,23 +61,23 @@ mlir::acuity::npu::collectTriggerBlockOps(Block &block, NpuCollector &collector,
 }
 
 LogicalResult
-mlir::acuity::npu::collectTriggers(NpuCollector &collector, Operation *dispatchOp,
+mlir::acuity::npu::collectLoadStates(NpuCollector &collector, Operation *dispatchOp,
                               const HardwareInfo &hwInfo, int64_t coreId) {
   if (!dispatchOp)
     return failure();
   for (Region &region : dispatchOp->getRegions()) {
-    if (failed(collectTriggerBlocks(region, collector, hwInfo, coreId)))
+    if (failed(collectLoadStateBlocks(region, collector, hwInfo, coreId)))
       return failure();
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::collectTriggerBlocks(Region &region, NpuCollector &collector,
+mlir::acuity::npu::collectLoadStateBlocks(Region &region, NpuCollector &collector,
                                     const HardwareInfo &hwInfo,
                                     int64_t coreId) {
   for (Block &block : region) {
-    if (failed(collectTriggerBlockOps(block, collector, hwInfo, coreId)))
+    if (failed(collectLoadStateBlockOps(block, collector, hwInfo, coreId)))
       return failure();
   }
   return success();

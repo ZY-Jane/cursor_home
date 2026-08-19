@@ -118,7 +118,7 @@ private:
   std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Accumulates NBG trigger payloads before serialize.
+/// Accumulates collected trigger info; NBG blob is written later by serializeNbg.
 class NpuCollector {
 public:
   NpuCollector() = default;
@@ -160,20 +160,20 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
 LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
-/// Walk a dispatch: collectTriggers → collectTriggerBlocks → collectTriggerBlockOps.
-/// Collects trigger info (params + loadState). Does not write the NBG blob.
-LogicalResult collectTriggers(NpuCollector &collector, Operation *dispatchOp,
-                              const HardwareInfo &hwInfo, int64_t coreId = 0);
+/// Walk a dispatch: collectLoadStates → collectLoadStateBlocks → collectLoadStateBlockOps.
+/// Collects loadState info from the dispatch body. Does not write the NBG blob.
+LogicalResult collectLoadStates(NpuCollector &collector, Operation *dispatchOp,
+                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 
-LogicalResult collectTriggerBlocks(Region &region, NpuCollector &collector,
-                                   const HardwareInfo &hwInfo,
-                                   int64_t coreId = 0);
-
-LogicalResult collectTriggerBlockOps(Block &block, NpuCollector &collector,
+LogicalResult collectLoadStateBlocks(Region &region, NpuCollector &collector,
                                      const HardwareInfo &hwInfo,
                                      int64_t coreId = 0);
 
-/// Later step: pack collected trigger info into an NBG buffer.
+LogicalResult collectLoadStateBlockOps(Block &block, NpuCollector &collector,
+                                       const HardwareInfo &hwInfo,
+                                       int64_t coreId = 0);
+
+/// Later step: pack collected loadState info into an NBG buffer.
 LogicalResult serializeNbg(const NpuCollector &collector,
                            std::vector<uint8_t> &nbgOut);
 
