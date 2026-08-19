@@ -46,6 +46,8 @@ mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuCollector &collector,
     if (!triggerOp)
       continue;
 
+    // Later: also collect cmdBuffer / coefData from other ops into the collector.
+
     TriggerParams triggerParams;
     if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
       return failure();

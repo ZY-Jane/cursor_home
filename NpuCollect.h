@@ -164,17 +164,16 @@ LogicalResult emitLoadState(const TriggerParams &params,
 /// Fills NpuCollector from IR (loadState now; cmdBuffer / coefData later).
 /// Does not write the NBG blob.
 LogicalResult collectNpu(NpuCollector &collector, Operation *dispatchOp,
-                                const HardwareInfo &hwInfo, int64_t coreId = 0);
+                         const HardwareInfo &hwInfo, int64_t coreId = 0);
 
 LogicalResult collectNpuBlocks(Region &region, NpuCollector &collector,
-                                     const HardwareInfo &hwInfo,
-                                     int64_t coreId = 0);
+                               const HardwareInfo &hwInfo, int64_t coreId = 0);
 
 LogicalResult collectNpuBlockOps(Block &block, NpuCollector &collector,
-                                       const HardwareInfo &hwInfo,
-                                       int64_t coreId = 0);
+                                 const HardwareInfo &hwInfo,
+                                 int64_t coreId = 0);
 
-/// Later step: pack collected loadState info into an NBG buffer.
+/// Later step: pack collected info into an NBG buffer.
 LogicalResult serializeNbg(const NpuCollector &collector,
                            std::vector<uint8_t> &nbgOut);
 
