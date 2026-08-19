@@ -159,6 +159,10 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
 LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
+/// Walk a dispatch (or any op with regions): collectNbg → collectNbgBlocks → collectNbgBlockOps.
+LogicalResult collectNbg(NpuCollector &collector, Operation *dispatchOp,
+                         const HardwareInfo &hwInfo, int64_t coreId = 0);
+
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 

@@ -61,6 +61,18 @@ mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
 }
 
 LogicalResult
+mlir::acuity::npu::collectNbg(NpuCollector &collector, Operation *dispatchOp,
+                              const HardwareInfo &hwInfo, int64_t coreId) {
+  if (!dispatchOp)
+    return failure();
+  for (Region &region : dispatchOp->getRegions()) {
+    if (failed(collectNbgBlocks(region, collector, hwInfo, coreId)))
+      return failure();
+  }
+  return success();
+}
+
+LogicalResult
 mlir::acuity::npu::collectNbgBlocks(Region &region, NpuCollector &collector,
                                     const HardwareInfo &hwInfo,
                                     int64_t coreId) {
