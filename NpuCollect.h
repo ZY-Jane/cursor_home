@@ -1,10 +1,10 @@
 // NpuCollect.h
-// Collect-phase definitions for NPU NBG dump (C++ classes, private members).
+// Collect-phase definitions for one NPU launch (C++ classes, private members).
 //
-// TriggerParams   = fields extracted from IR/hw (input to emit).
-// loadStateBuf    = filled by emitLoadState via reference, then moved onto entry.
-// TriggerEntry    = one collected trigger (identity + loadStateBuf).
-// serializeNbg    = later: write NBG bytes from collected info.
+// NpuLaunchCollector = bag for one launch (NN now; shader/FFD/DMA later).
+// NnLaunchEntry      = one NN piece (identity + loadStateBuf).
+// collectNpuLaunch → collectNpuLaunchBlocks → collectNpuLaunchBlockOps
+// serializeNbg       = later: write NBG bytes from the collector.
 
 #pragma once
 
@@ -81,20 +81,20 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// One collected trigger: identity + loadState bytes filled by emitLoadState.
-class TriggerEntry {
+/// One NN piece in a launch: identity + loadState bytes.
+class NnLaunchEntry {
 public:
-  TriggerEntry() = default;
+  NnLaunchEntry() = default;
 
-  TriggerEntry(int64_t ordinal, Operation *op, Location loc,
-                  std::vector<uint8_t> loadStateBuf)
+  NnLaunchEntry(int64_t ordinal, Operation *op, Location loc,
+                std::vector<uint8_t> loadStateBuf)
       : ordinal_(ordinal), op_(op), loc_(loc),
         loadStateBuf_(std::move(loadStateBuf)) {}
 
   /// Convenience: take loc from op (op must be non-null).
-  TriggerEntry(int64_t ordinal, Operation *op,
-                  std::vector<uint8_t> loadStateBuf)
-      : TriggerEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
+  NnLaunchEntry(int64_t ordinal, Operation *op,
+                std::vector<uint8_t> loadStateBuf)
+      : NnLaunchEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
 
   int64_t getOrdinal() const { return ordinal_; }
   void setOrdinal(int64_t v) { ordinal_ = v; }
@@ -118,34 +118,34 @@ private:
   std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Pieces needed to run this dispatch on NPU (loadState now; cmd/coef later).
+/// Materials for one NPU launch. NN now; shader / FFD / DMA later.
 /// NBG blob is written later by serializeNbg.
-class NpuDescCollector {
+class NpuLaunchCollector {
 public:
-  NpuDescCollector() = default;
+  NpuLaunchCollector() = default;
 
-  void clear() { triggers_.clear(); }
+  void clear() { nnEntries_.clear(); }
 
   int64_t nextOrdinal() const {
-    return static_cast<int64_t>(triggers_.size());
+    return static_cast<int64_t>(nnEntries_.size());
   }
 
-  void add(TriggerEntry entry) { triggers_.push_back(std::move(entry)); }
+  void add(NnLaunchEntry entry) { nnEntries_.push_back(std::move(entry)); }
 
-  size_t size() const { return triggers_.size(); }
-  bool empty() const { return triggers_.empty(); }
+  size_t size() const { return nnEntries_.size(); }
+  bool empty() const { return nnEntries_.empty(); }
 
-  ArrayRef<TriggerEntry> getTriggers() const { return triggers_; }
-  MutableArrayRef<TriggerEntry> getTriggers() { return triggers_; }
+  ArrayRef<NnLaunchEntry> getNnEntries() const { return nnEntries_; }
+  MutableArrayRef<NnLaunchEntry> getNnEntries() { return nnEntries_; }
 
-  TriggerEntry &getTrigger(size_t i) { return triggers_[i]; }
-  const TriggerEntry &getTrigger(size_t i) const { return triggers_[i]; }
+  NnLaunchEntry &getNnEntry(size_t i) { return nnEntries_[i]; }
+  const NnLaunchEntry &getNnEntry(size_t i) const { return nnEntries_[i]; }
 
-  TriggerEntry &back() { return triggers_.back(); }
-  const TriggerEntry &back() const { return triggers_.back(); }
+  NnLaunchEntry &back() { return nnEntries_.back(); }
+  const NnLaunchEntry &back() const { return nnEntries_.back(); }
 
 private:
-  llvm::SmallVector<TriggerEntry, 8> triggers_;
+  llvm::SmallVector<NnLaunchEntry, 8> nnEntries_;
 };
 
 //===----------------------------------------------------------------------===//
@@ -161,21 +161,24 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
 LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
-/// Walk a dispatch: collectNpu → collectNpuBlocks → collectNpuBlockOps.
-/// Fills NpuDescCollector from IR (loadState now; cmdBuffer / coefData later).
-/// Does not write the NBG blob.
-LogicalResult collectNpu(NpuDescCollector &collector, Operation *dispatchOp,
-                         const HardwareInfo &hwInfo, int64_t coreId = 0);
-
-LogicalResult collectNpuBlocks(Region &region, NpuDescCollector &collector,
+/// Walk a dispatch: collectNpuLaunch → collectNpuLaunchBlocks →
+/// collectNpuLaunchBlockOps. Fills NpuLaunchCollector. Does not write NBG.
+LogicalResult collectNpuLaunch(NpuLaunchCollector &collector,
+                               Operation *dispatchOp,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 
-LogicalResult collectNpuBlockOps(Block &block, NpuDescCollector &collector,
-                                 const HardwareInfo &hwInfo,
-                                 int64_t coreId = 0);
+LogicalResult collectNpuLaunchBlocks(Region &region,
+                                     NpuLaunchCollector &collector,
+                                     const HardwareInfo &hwInfo,
+                                     int64_t coreId = 0);
 
-/// Later step: pack collected info into an NBG buffer.
-LogicalResult serializeNbg(const NpuDescCollector &collector,
+LogicalResult collectNpuLaunchBlockOps(Block &block,
+                                       NpuLaunchCollector &collector,
+                                       const HardwareInfo &hwInfo,
+                                       int64_t coreId = 0);
+
+/// Later step: pack collected launch materials into an NBG buffer.
+LogicalResult serializeNbg(const NpuLaunchCollector &collector,
                            std::vector<uint8_t> &nbgOut);
 
 } // namespace npu

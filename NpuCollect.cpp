@@ -1,4 +1,4 @@
-// NpuCollect.cpp — emitLoadState fills loadStateBuf by reference.
+// NpuCollect.cpp — collectNpuLaunch fills NpuLaunchCollector.
 
 #include "NpuCollect.h"
 
@@ -37,16 +37,15 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
   return success();
 }
 
-LogicalResult
-mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuDescCollector &collector,
-                                      const HardwareInfo &hwInfo,
-                                      int64_t coreId) {
+LogicalResult mlir::acuity::npu::collectNpuLaunchBlockOps(
+    Block &block, NpuLaunchCollector &collector, const HardwareInfo &hwInfo,
+    int64_t coreId) {
   for (Operation &op : block) {
     auto triggerOp = dyn_cast<nn::TriggerOp>(&op);
     if (!triggerOp)
       continue;
 
-    // Later: also collect cmdBuffer / coefData from other ops into the collector.
+    // Later: also collect shader / FFD / DMA / cmdBuffer / coefData.
 
     TriggerParams triggerParams;
     if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
@@ -56,40 +55,43 @@ mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuDescCollector &collector,
     if (failed(emitLoadState(triggerParams, loadStateBuf)))
       return failure();
 
-    collector.add(TriggerEntry(collector.nextOrdinal(), &op,
-                                  std::move(loadStateBuf)));
+    collector.add(NnLaunchEntry(collector.nextOrdinal(), &op,
+                                std::move(loadStateBuf)));
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::collectNpu(NpuDescCollector &collector, Operation *dispatchOp,
-                              const HardwareInfo &hwInfo, int64_t coreId) {
+mlir::acuity::npu::collectNpuLaunch(NpuLaunchCollector &collector,
+                                    Operation *dispatchOp,
+                                    const HardwareInfo &hwInfo,
+                                    int64_t coreId) {
   if (!dispatchOp)
     return failure();
   for (Region &region : dispatchOp->getRegions()) {
-    if (failed(collectNpuBlocks(region, collector, hwInfo, coreId)))
+    if (failed(collectNpuLaunchBlocks(region, collector, hwInfo, coreId)))
       return failure();
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::collectNpuBlocks(Region &region, NpuDescCollector &collector,
-                                    const HardwareInfo &hwInfo,
-                                    int64_t coreId) {
+mlir::acuity::npu::collectNpuLaunchBlocks(Region &region,
+                                          NpuLaunchCollector &collector,
+                                          const HardwareInfo &hwInfo,
+                                          int64_t coreId) {
   for (Block &block : region) {
-    if (failed(collectNpuBlockOps(block, collector, hwInfo, coreId)))
+    if (failed(collectNpuLaunchBlockOps(block, collector, hwInfo, coreId)))
       return failure();
   }
   return success();
 }
 
 LogicalResult
-mlir::acuity::npu::serializeNbg(const NpuDescCollector &collector,
+mlir::acuity::npu::serializeNbg(const NpuLaunchCollector &collector,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
-  // for (const TriggerEntry &e : collector.getTriggers()) {
+  // for (const NnLaunchEntry &e : collector.getNnEntries()) {
   //   use e.getOrdinal(), e.getLoadStateBuf()
   // }
   (void)collector;

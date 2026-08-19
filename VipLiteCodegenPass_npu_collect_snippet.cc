@@ -1,5 +1,5 @@
 // Copy into VipLiteCodegenPass.cc
-// Replace collectNNNbg(...) with collectNpu (fills collector; NBG is serializeNbg later).
+// Replace collectNNNbg(...) with collectNpuLaunch.
 
 void runOnOperation() override {
   auto funcOp = getOperation();
@@ -18,8 +18,8 @@ void runOnOperation() override {
     dispatchOp.print(llvm::outs(), OpPrintingFlags().enableDebugInfo());
     llvm::outs() << "\n==============codegen============\n";
 
-    NpuDescCollector npuDescCollector;
-    if (failed(collectNpu(npuDescCollector, dispatchOp, hwInfo))) {
+    NpuLaunchCollector launch;
+    if (failed(collectNpuLaunch(launch, dispatchOp, hwInfo))) {
       signalPassFailure();
       return;
     }
