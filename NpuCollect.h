@@ -1,11 +1,9 @@
 // NpuCollect.h
 // Collect-phase definitions for NPU NBG dump (C++ classes, private members).
 //
-// TriggerParams   = fields extracted from IR/hw (input to emit).
-// loadStateBuf    = our copy of loadState bytes (we alloc, we free).
+// TriggerParams   = fields extracted from IR/hw (input to pack).
+// loadStateBuf    = vector returned by the packer (same as CL returning string).
 // TriggerNbgEntry = identity + loadStateBuf.
-//
-// Internal packer only hands out {data, size}; we memcpy then it frees.
 
 #pragma once
 
@@ -37,7 +35,7 @@ namespace acuity {
 namespace npu {
 
 /// Parameters extracted from one TriggerOp + hw, used only to emit loadState.
-/// hwInfo points at Pass-owned HardwareInfo; must outlive copyLoadState.
+/// hwInfo points at Pass-owned HardwareInfo; must outlive packLoadState.
 class TriggerParams {
 public:
   TriggerParams() = default;
@@ -82,13 +80,7 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// Borrowed view from the internal packer. Not owned by MLIR.
-struct LoadStateView {
-  const uint8_t *data = nullptr;
-  size_t size = 0;
-};
-
-/// One collected trigger: identity + our copied loadState bytes.
+/// One collected trigger: identity + loadState bytes we took from packLoadState.
 class TriggerNbgEntry {
 public:
   TriggerNbgEntry() = default;
@@ -163,13 +155,8 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
                                 const HardwareInfo &hwInfo,
                                 int64_t coreId = 0);
 
-/// Internal packer: returns borrowed data+size. Caller must copy, then release.
-LogicalResult packLoadState(const TriggerParams &params, LoadStateView &view);
-void releasePackedLoadState(LoadStateView view);
-
-/// Allocate loadStateBuf, memcpy from the internal view, then release the view.
-LogicalResult copyLoadState(const TriggerParams &params,
-                            std::vector<uint8_t> &loadStateBuf);
+/// Internal packer builds a vector and returns it (move, same as returning string).
+FailureOr<std::vector<uint8_t>> packLoadState(const TriggerParams &params);
 
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
