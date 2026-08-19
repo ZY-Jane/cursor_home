@@ -1,8 +1,8 @@
 // NpuCollect.h
 // Collect-phase definitions for NPU NBG dump (C++ classes, private members).
 //
-// TriggerParams   = fields extracted from IR/hw (input to pack).
-// loadStateBuf    = vector returned by the packer (same as CL returning string).
+// TriggerParams   = fields extracted from IR/hw (input to emit).
+// loadStateBuf    = filled by emitLoadState via reference, then moved onto entry.
 // TriggerNbgEntry = identity + loadStateBuf.
 
 #pragma once
@@ -35,7 +35,7 @@ namespace acuity {
 namespace npu {
 
 /// Parameters extracted from one TriggerOp + hw, used only to emit loadState.
-/// hwInfo points at Pass-owned HardwareInfo; must outlive packLoadState.
+/// hwInfo points at Pass-owned HardwareInfo; must outlive emitLoadState.
 class TriggerParams {
 public:
   TriggerParams() = default;
@@ -80,7 +80,7 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// One collected trigger: identity + loadState bytes we took from packLoadState.
+/// One collected trigger: identity + loadState bytes filled by emitLoadState.
 class TriggerNbgEntry {
 public:
   TriggerNbgEntry() = default;
@@ -155,8 +155,9 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
                                 const HardwareInfo &hwInfo,
                                 int64_t coreId = 0);
 
-/// Internal packer builds a vector and returns it (move, same as returning string).
-FailureOr<std::vector<uint8_t>> packLoadState(const TriggerParams &params);
+/// Pack loadState into the caller's vector (out-param, filled in place).
+LogicalResult emitLoadState(const TriggerParams &params,
+                            std::vector<uint8_t> &loadStateBuf);
 
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);

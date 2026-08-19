@@ -1,4 +1,4 @@
-// NpuCollect.cpp — packer returns vector; we move it onto TriggerNbgEntry.
+// NpuCollect.cpp — emitLoadState fills loadStateBuf by reference.
 
 #include "NpuCollect.h"
 
@@ -26,14 +26,15 @@ mlir::acuity::npu::fillTriggerParams(TriggerParams &params,
   return success();
 }
 
-FailureOr<std::vector<uint8_t>>
-mlir::acuity::npu::packLoadState(const TriggerParams &params) {
-  std::vector<uint8_t> buf;
-  // Same as CL: internal builds std::string and returns it.
+LogicalResult
+mlir::acuity::npu::emitLoadState(const TriggerParams &params,
+                                 std::vector<uint8_t> &loadStateBuf) {
+  loadStateBuf.clear();
+  // Internal module writes into loadStateBuf (reference, same object as caller).
   // const HardwareInfo *hw = params.getHwInfo();
-  // buf = buildLoadState(..., hw);
+  // loadStateBuf = buildLoadState(..., hw);
   (void)params;
-  return buf;
+  return success();
 }
 
 LogicalResult
@@ -41,20 +42,20 @@ mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
                                       const HardwareInfo &hwInfo,
                                       int64_t coreId) {
   for (Operation &op : block) {
-    auto trigger = dyn_cast<nn::TriggerOp>(&op);
-    if (!trigger)
+    auto triggerOp = dyn_cast<nn::TriggerOp>(&op);
+    if (!triggerOp)
       continue;
 
-    TriggerParams params;
-    if (failed(fillTriggerParams(params, trigger, hwInfo, coreId)))
+    TriggerParams triggerParams;
+    if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
       return failure();
 
-    FailureOr<std::vector<uint8_t>> packed = packLoadState(params);
-    if (failed(packed))
+    std::vector<uint8_t> loadStateBuf;
+    if (failed(emitLoadState(triggerParams, loadStateBuf)))
       return failure();
 
     collector.add(TriggerNbgEntry(collector.nextOrdinal(), &op,
-                                  std::move(*packed)));
+                                  std::move(loadStateBuf)));
   }
   return success();
 }
