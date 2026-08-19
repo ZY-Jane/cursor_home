@@ -118,10 +118,11 @@ private:
   std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Accumulates collected trigger info; NBG blob is written later by serializeNbg.
-class NpuCollector {
+/// Pieces needed to run this dispatch on NPU (loadState now; cmd/coef later).
+/// NBG blob is written later by serializeNbg.
+class NpuDescCollector {
 public:
-  NpuCollector() = default;
+  NpuDescCollector() = default;
 
   void clear() { triggers_.clear(); }
 
@@ -161,20 +162,20 @@ LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
 
 /// Walk a dispatch: collectNpu → collectNpuBlocks → collectNpuBlockOps.
-/// Fills NpuCollector from IR (loadState now; cmdBuffer / coefData later).
+/// Fills NpuDescCollector from IR (loadState now; cmdBuffer / coefData later).
 /// Does not write the NBG blob.
-LogicalResult collectNpu(NpuCollector &collector, Operation *dispatchOp,
+LogicalResult collectNpu(NpuDescCollector &collector, Operation *dispatchOp,
                          const HardwareInfo &hwInfo, int64_t coreId = 0);
 
-LogicalResult collectNpuBlocks(Region &region, NpuCollector &collector,
+LogicalResult collectNpuBlocks(Region &region, NpuDescCollector &collector,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 
-LogicalResult collectNpuBlockOps(Block &block, NpuCollector &collector,
+LogicalResult collectNpuBlockOps(Block &block, NpuDescCollector &collector,
                                  const HardwareInfo &hwInfo,
                                  int64_t coreId = 0);
 
 /// Later step: pack collected info into an NBG buffer.
-LogicalResult serializeNbg(const NpuCollector &collector,
+LogicalResult serializeNbg(const NpuDescCollector &collector,
                            std::vector<uint8_t> &nbgOut);
 
 } // namespace npu

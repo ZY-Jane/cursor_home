@@ -38,7 +38,7 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
 }
 
 LogicalResult
-mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuCollector &collector,
+mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuDescCollector &collector,
                                       const HardwareInfo &hwInfo,
                                       int64_t coreId) {
   for (Operation &op : block) {
@@ -63,7 +63,7 @@ mlir::acuity::npu::collectNpuBlockOps(Block &block, NpuCollector &collector,
 }
 
 LogicalResult
-mlir::acuity::npu::collectNpu(NpuCollector &collector, Operation *dispatchOp,
+mlir::acuity::npu::collectNpu(NpuDescCollector &collector, Operation *dispatchOp,
                               const HardwareInfo &hwInfo, int64_t coreId) {
   if (!dispatchOp)
     return failure();
@@ -75,7 +75,7 @@ mlir::acuity::npu::collectNpu(NpuCollector &collector, Operation *dispatchOp,
 }
 
 LogicalResult
-mlir::acuity::npu::collectNpuBlocks(Region &region, NpuCollector &collector,
+mlir::acuity::npu::collectNpuBlocks(Region &region, NpuDescCollector &collector,
                                     const HardwareInfo &hwInfo,
                                     int64_t coreId) {
   for (Block &block : region) {
@@ -86,7 +86,7 @@ mlir::acuity::npu::collectNpuBlocks(Region &region, NpuCollector &collector,
 }
 
 LogicalResult
-mlir::acuity::npu::serializeNbg(const NpuCollector &collector,
+mlir::acuity::npu::serializeNbg(const NpuDescCollector &collector,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
   // for (const TriggerEntry &e : collector.getTriggers()) {

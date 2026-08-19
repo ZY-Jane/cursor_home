@@ -18,8 +18,8 @@ void runOnOperation() override {
     dispatchOp.print(llvm::outs(), OpPrintingFlags().enableDebugInfo());
     llvm::outs() << "\n==============codegen============\n";
 
-    NpuCollector npuTriggerCollector;
-    if (failed(collectNpu(npuTriggerCollector, dispatchOp, hwInfo))) {
+    NpuDescCollector npuDescCollector;
+    if (failed(collectNpu(npuDescCollector, dispatchOp, hwInfo))) {
       signalPassFailure();
       return;
     }
