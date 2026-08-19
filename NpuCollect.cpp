@@ -1,4 +1,4 @@
-// NpuCollect.cpp — collect phase: fill params, emit buffer, store buffer.
+// NpuCollect.cpp — collect identities; LoadStateStore owns loadState bytes.
 
 #include "NpuCollect.h"
 
@@ -26,10 +26,9 @@ mlir::acuity::npu::fillTriggerParams(TriggerParams &params,
   return success();
 }
 
-LogicalResult
-mlir::acuity::npu::emitLoadState(const TriggerParams &params,
-                                 std::vector<uint8_t> &loadStateBuf) {
-  // Bridge to non-MLIR module, reading via getters:
+LogicalResult LoadStateStore::emit(const TriggerParams &params, size_t &index) {
+  std::vector<uint8_t> buf;
+  // Bridge to non-MLIR packer, reading via getters:
   // const HardwareInfo *hw = params.getHwInfo();
   // LoadStateInfo packed;
   // packed.coreId = params.getCoreId();
@@ -37,14 +36,16 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
   // packed.commandBufferSize = params.getCommandBufferSize();
   // packed.eventId = params.getEventId();
   // packed.multiCoreSync = params.getMultiCoreSync();
-  // loadStateBuf = buildLoadState(packed, hw);
+  // buf = buildLoadState(packed, hw);
   (void)params;
-  loadStateBuf.clear();
+  index = bufs_.size();
+  bufs_.push_back(std::move(buf));
   return success();
 }
 
 LogicalResult
 mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
+                                      LoadStateStore &store,
                                       const HardwareInfo &hwInfo,
                                       int64_t coreId) {
   for (Operation &op : block) {
@@ -56,22 +57,22 @@ mlir::acuity::npu::collectNbgBlockOps(Block &block, NpuCollector &collector,
     if (failed(fillTriggerParams(params, trigger, hwInfo, coreId)))
       return failure();
 
-    std::vector<uint8_t> loadStateBuf;
-    if (failed(emitLoadState(params, loadStateBuf)))
+    size_t bufIndex = 0;
+    if (failed(store.emit(params, bufIndex)))
       return failure();
 
-    collector.add(TriggerNbgEntry(collector.nextOrdinal(), &op,
-                                  std::move(loadStateBuf)));
+    collector.add(TriggerNbgEntry(static_cast<int64_t>(bufIndex), &op));
   }
   return success();
 }
 
 LogicalResult
 mlir::acuity::npu::collectNbgBlocks(Region &region, NpuCollector &collector,
+                                    LoadStateStore &store,
                                     const HardwareInfo &hwInfo,
                                     int64_t coreId) {
   for (Block &block : region) {
-    if (failed(collectNbgBlockOps(block, collector, hwInfo, coreId)))
+    if (failed(collectNbgBlockOps(block, collector, store, hwInfo, coreId)))
       return failure();
   }
   return success();
@@ -79,11 +80,14 @@ mlir::acuity::npu::collectNbgBlocks(Region &region, NpuCollector &collector,
 
 LogicalResult
 mlir::acuity::npu::serializeNbg(const NpuCollector &collector,
+                                const LoadStateStore &store,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
   // for (const TriggerNbgEntry &e : collector.getTriggers()) {
-  //   use e.getOrdinal(), e.getLoadStateBuf()
+  //   ArrayRef<uint8_t> bytes = store.getBuf(e.getOrdinal());
+  //   append bytes into nbgOut (copy into the NBG blob)
   // }
   (void)collector;
+  (void)store;
   return success();
 }

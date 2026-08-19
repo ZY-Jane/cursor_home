@@ -1,9 +1,10 @@
 // NpuCollect.h
 // Collect-phase definitions for NPU NBG dump (C++ classes, private members).
 //
-// TriggerParams   = fields extracted from IR/hw (input to emit).
-// loadStateBuf    = hardware bytes (the NBG payload).
-// TriggerNbgEntry = identity + loadStateBuf.
+// TriggerParams    = fields extracted from IR/hw (input to emit).
+// LoadStateStore   = emit module: allocates and frees loadState bytes.
+// TriggerNbgEntry  = IR identity only (ordinal / op / loc).
+// NpuCollector     = collected trigger identities.
 
 #pragma once
 
@@ -35,7 +36,7 @@ namespace acuity {
 namespace npu {
 
 /// Parameters extracted from one TriggerOp + hw, used only to emit loadState.
-/// Not stored on the collector.
+/// hwInfo points at Pass-owned HardwareInfo; must outlive LoadStateStore::emit.
 class TriggerParams {
 public:
   TriggerParams() = default;
@@ -80,20 +81,37 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// One collected trigger: identity + emitted loadState bytes (NBG payload).
+/// Emit module: packs loadState bytes and owns that memory until clear()/dtor.
+class LoadStateStore {
+public:
+  LoadStateStore() = default;
+
+  /// Pack params into a new buffer kept in this store. Returns the index.
+  LogicalResult emit(const TriggerParams &params, size_t &index);
+
+  size_t size() const { return bufs_.size(); }
+  bool empty() const { return bufs_.empty(); }
+
+  ArrayRef<uint8_t> getBuf(size_t i) const { return bufs_[i]; }
+
+  /// Free all loadState buffers. Also runs from the destructor.
+  void clear() { bufs_.clear(); }
+
+private:
+  std::vector<std::vector<uint8_t>> bufs_;
+};
+
+/// One collected trigger: IR identity. Bytes live in LoadStateStore.
 class TriggerNbgEntry {
 public:
   TriggerNbgEntry() = default;
 
-  TriggerNbgEntry(int64_t ordinal, Operation *op, Location loc,
-                  std::vector<uint8_t> loadStateBuf)
-      : ordinal_(ordinal), op_(op), loc_(loc),
-        loadStateBuf_(std::move(loadStateBuf)) {}
+  TriggerNbgEntry(int64_t ordinal, Operation *op, Location loc)
+      : ordinal_(ordinal), op_(op), loc_(loc) {}
 
   /// Convenience: take loc from op (op must be non-null).
-  TriggerNbgEntry(int64_t ordinal, Operation *op,
-                  std::vector<uint8_t> loadStateBuf)
-      : TriggerNbgEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
+  TriggerNbgEntry(int64_t ordinal, Operation *op)
+      : TriggerNbgEntry(ordinal, op, op->getLoc()) {}
 
   int64_t getOrdinal() const { return ordinal_; }
   void setOrdinal(int64_t v) { ordinal_ = v; }
@@ -104,20 +122,13 @@ public:
   Location getLoc() const { return loc_; }
   void setLoc(Location v) { loc_ = v; }
 
-  ArrayRef<uint8_t> getLoadStateBuf() const { return loadStateBuf_; }
-  MutableArrayRef<uint8_t> getLoadStateBuf() { return loadStateBuf_; }
-  void setLoadStateBuf(std::vector<uint8_t> v) {
-    loadStateBuf_ = std::move(v);
-  }
-
 private:
   int64_t ordinal_ = -1;
   Operation *op_ = nullptr;
   Location loc_;
-  std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Accumulates NBG trigger payloads before serialize.
+/// Accumulates trigger identities before serialize.
 class NpuCollector {
 public:
   NpuCollector() = default;
@@ -155,18 +166,17 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
                                 const HardwareInfo &hwInfo,
                                 int64_t coreId = 0);
 
-/// Pack TriggerParams into hardware loadState bytes.
-LogicalResult emitLoadState(const TriggerParams &params,
-                            std::vector<uint8_t> &loadStateBuf);
-
 LogicalResult collectNbgBlocks(Region &region, NpuCollector &collector,
+                               LoadStateStore &store,
                                const HardwareInfo &hwInfo, int64_t coreId = 0);
 
 LogicalResult collectNbgBlockOps(Block &block, NpuCollector &collector,
+                                 LoadStateStore &store,
                                  const HardwareInfo &hwInfo,
                                  int64_t coreId = 0);
 
 LogicalResult serializeNbg(const NpuCollector &collector,
+                           const LoadStateStore &store,
                            std::vector<uint8_t> &nbgOut);
 
 } // namespace npu
