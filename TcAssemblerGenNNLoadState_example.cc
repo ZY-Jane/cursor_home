@@ -24,9 +24,10 @@ std::vector<uint8_t> genNNLoadState(uint64_t cmdBufferAddr) {
   // Whole 32-bit data word (no sub-field):
   appendLoadState(loadStateBuf, kRegPsTriggerNn2, cmdHi);
 
-  // Sub-field 31:17 — give it a short name once, then one short call:
+  // Sub-field 31:17 — short alias once, then setField like HAL:
   // #define NN_ADDR_HI  31:17
-  // lsPut(loadStateBuf, kRegPsTriggerNn2, NN_ADDR_HI, cmdHi);
+  // appendLoadState(loadStateBuf, kRegPsTriggerNn2,
+  //                 setField(0, NN_ADDR_HI, cmdHi));
 
   // Keep appending into the same buffer:
   // appendLoadState(loadStateBuf, otherReg, otherValue);

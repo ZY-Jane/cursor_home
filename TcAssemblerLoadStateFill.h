@@ -1,12 +1,15 @@
 // TcAssemblerLoadStateFill.h
 // Copy into mlir::acuity::tc_assembler (header-only).
 //
-// Bit ranges are high:low like HAL (e.g. 31:17). lsStart / lsEnd peel those
-// apart; lsSet / makeLoadStateHeader / lsPut call them — not setField.
+// Same layering as HAL: start / end peel 31:17 (high:low);
+// setField(data, field, value) calls start/end inside.
 //
-// Packet layout (one Load State):
-//   word0 = opcode=1 | count | regAddr   → e.g. 0x0801051d
-//   word1.. = register data
+//   #define NN_ADDR_HI  31:17
+//   word = setField(word, NN_ADDR_HI, cmdHi);
+//   appendLoadState(buf, reg, setField(0, NN_ADDR_HI, cmdHi));
+//
+// start/end are function-like macros (0?field / 1?field). Do not write
+// v.end() in a file that includes this header; the end( token will fire.
 
 #pragma once
 
@@ -14,27 +17,29 @@
 #include <vector>
 
 //===----------------------------------------------------------------------===//
-// 31:17 → start / end  (same trick as __gcmSTART / __gcmEND)
+// Match HAL: __gcmSTART / __gcmEND / __gcmGETSIZE / __gcmALIGN / __gcmMASK
+// / gcmSETFIELD — local names, no HAL include.
 //===----------------------------------------------------------------------===//
 
-#define lsStart(bits) (0 ? bits)
-#define lsEnd(bits) (1 ? bits)
-#define lsSize(bits) (lsEnd(bits) - lsStart(bits) + 1)
-#define lsMask(bits)                                                           \
-  ((uint32_t)((lsSize(bits) == 32) ? ~0U : (~(~0U << lsSize(bits)))))
-#define lsAlign(data, bits) (((uint32_t)(data)) << lsStart(bits))
+#define start(reg_field) (0 ? reg_field)
+#define end(reg_field) (1 ? reg_field)
+#define fieldSize(reg_field) (end(reg_field) - start(reg_field) + 1)
+#define fieldAlign(data, reg_field) (((uint32_t)(data)) << start(reg_field))
+#define fieldMask(reg_field)                                                   \
+  ((uint32_t)((fieldSize(reg_field) == 32)                                     \
+                  ? ~0U                                                        \
+                  : (~(~0U << fieldSize(reg_field)))))
 
-/// Insert `val` into `bits` of `word`. Uses lsStart/lsEnd; does not call setField.
-#define lsSet(word, bits, val)                                                 \
-  (((uint32_t)(word) & ~lsAlign(lsMask(bits), bits)) |                         \
-   lsAlign((uint32_t)(val) & lsMask(bits), bits))
+#define setField(data, field, value)                                           \
+  ((((uint32_t)(data)) & ~fieldAlign(fieldMask(field), field)) |               \
+   fieldAlign((uint32_t)(value) & fieldMask(field), field))
 
-#define lsGet(word, bits) ((((uint32_t)(word)) >> lsStart(bits)) & lsMask(bits))
+#define getField(data, field)                                                  \
+  ((((uint32_t)(data)) >> start(field)) & fieldMask(field))
 
-// FE Load State header fields (high:low).
-#define LS_FE_OPCODE 31:27
-#define LS_FE_COUNT 26:16
-#define LS_FE_ADDRESS 15:0
+#define FE_OPCODE 31:27
+#define FE_COUNT 26:16
+#define FE_ADDRESS 15:0
 
 namespace mlir {
 namespace acuity {
@@ -48,16 +53,15 @@ enum FeOpcode : uint32_t {
 
 constexpr uint32_t kRegPsTriggerNn2 = 0x051d;
 
-/// Load State command header: opcode=1, count, 16-bit register address.
 inline uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1) {
   uint32_t h = 0;
-  h = lsSet(h, LS_FE_OPCODE, kFeOpLoadState);
-  h = lsSet(h, LS_FE_COUNT, count);
-  h = lsSet(h, LS_FE_ADDRESS, regAddr);
+  h = setField(h, FE_OPCODE, kFeOpLoadState);
+  h = setField(h, FE_COUNT, count);
+  h = setField(h, FE_ADDRESS, regAddr);
   return h;
 }
 
-inline uint32_t makeFeEnd() { return lsSet(0, LS_FE_OPCODE, kFeOpEnd); }
+inline uint32_t makeFeEnd() { return setField(0, FE_OPCODE, kFeOpEnd); }
 
 inline void appendWord(std::vector<uint8_t> &buf, uint32_t word) {
   buf.push_back(static_cast<uint8_t>(word));
@@ -93,10 +97,3 @@ inline void appendFeEnd(std::vector<uint8_t> &buf) {
 } // namespace tc_assembler
 } // namespace acuity
 } // namespace mlir
-
-// One register write whose data word has a 31:17-style field.
-//   #define NN_ADDR_HI  31:17
-//   lsPut(buf, kRegPsTriggerNn2, NN_ADDR_HI, cmdHi);
-#define lsPut(buf, reg, bits, val)                                             \
-  ::mlir::acuity::tc_assembler::appendLoadState((buf), (reg),                   \
-                                               lsSet(0, bits, val))
