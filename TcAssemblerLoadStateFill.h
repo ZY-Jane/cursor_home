@@ -37,8 +37,10 @@
 #define getField(data, field)                                                  \
   ((((uint32_t)(data)) >> start(field)) & fieldMask(field))
 
+// FE Load State header (high:low). Count is 25:16; bit 26 is FixedPoint.
 #define FE_OPCODE 31:27
-#define FE_COUNT 26:16
+#define FE_FIXED_POINT 26:26
+#define FE_COUNT 25:16
 #define FE_ADDRESS 15:0
 
 namespace mlir {
@@ -53,9 +55,11 @@ enum FeOpcode : uint32_t {
 
 constexpr uint32_t kRegPsTriggerNn2 = 0x051d;
 
-inline uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1) {
+inline uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1,
+                                    uint32_t fixedPoint = 0) {
   uint32_t h = 0;
   h = setField(h, FE_OPCODE, kFeOpLoadState);
+  h = setField(h, FE_FIXED_POINT, fixedPoint);
   h = setField(h, FE_COUNT, count);
   h = setField(h, FE_ADDRESS, regAddr);
   return h;
@@ -77,16 +81,17 @@ inline void appendWords(std::vector<uint8_t> &buf, const uint32_t *data,
 }
 
 inline void appendLoadState(std::vector<uint8_t> &buf, uint32_t regAddr,
-                            uint32_t data) {
-  appendWord(buf, makeLoadStateHeader(regAddr, /*count=*/1));
+                            uint32_t data, uint32_t fixedPoint = 0) {
+  appendWord(buf, makeLoadStateHeader(regAddr, /*count=*/1, fixedPoint));
   appendWord(buf, data);
 }
 
 inline void appendLoadStateN(std::vector<uint8_t> &buf, uint32_t regAddr,
-                             const uint32_t *data, uint32_t count) {
+                             const uint32_t *data, uint32_t count,
+                             uint32_t fixedPoint = 0) {
   if (count == 0)
     return;
-  appendWord(buf, makeLoadStateHeader(regAddr, count));
+  appendWord(buf, makeLoadStateHeader(regAddr, count, fixedPoint));
   appendWords(buf, data, count);
 }
 
