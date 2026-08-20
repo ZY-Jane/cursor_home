@@ -1,30 +1,22 @@
 // TcAssemblerLoadStateFill.h
 // Copy into mlir::acuity::tc_assembler (header-only).
 //
-// Same layering as HAL: start / end peel 31:17 (high:low);
-// setField(data, field, value) calls start/end inside.
+// HAL uses __gcmSTART / __gcmEND, not start/end: `#define end(` breaks
+// string::end() in every TU that includes this header.
 //
 //   #define NN_ADDR_HI  31:17
 //   word = setField(word, NN_ADDR_HI, cmdHi);
 //   appendLoadState(buf, reg, setField(0, NN_ADDR_HI, cmdHi));
-//
-// start/end are function-like macros (0?field / 1?field). Do not write
-// v.end() in a file that includes this header; the end( token will fire.
 
 #pragma once
 
 #include <cstdint>
 #include <vector>
 
-//===----------------------------------------------------------------------===//
-// Match HAL: __gcmSTART / __gcmEND / __gcmGETSIZE / __gcmALIGN / __gcmMASK
-// / gcmSETFIELD — local names, no HAL include.
-//===----------------------------------------------------------------------===//
-
-#define start(reg_field) (0 ? reg_field)
-#define end(reg_field) (1 ? reg_field)
-#define fieldSize(reg_field) (end(reg_field) - start(reg_field) + 1)
-#define fieldAlign(data, reg_field) (((uint32_t)(data)) << start(reg_field))
+#define LS_START(reg_field) (0 ? reg_field)
+#define LS_END(reg_field) (1 ? reg_field)
+#define fieldSize(reg_field) (LS_END(reg_field) - LS_START(reg_field) + 1)
+#define fieldAlign(data, reg_field) (((uint32_t)(data)) << LS_START(reg_field))
 #define fieldMask(reg_field)                                                   \
   ((uint32_t)((fieldSize(reg_field) == 32)                                     \
                   ? ~0U                                                        \
@@ -35,7 +27,7 @@
    fieldAlign((uint32_t)(value) & fieldMask(field), field))
 
 #define getField(data, field)                                                  \
-  ((((uint32_t)(data)) >> start(field)) & fieldMask(field))
+  ((((uint32_t)(data)) >> LS_START(field)) & fieldMask(field))
 
 // FE Load State header (high:low). Count is 25:16; bit 26 is FixedPoint.
 #define FE_OPCODE 31:27
