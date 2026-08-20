@@ -19,8 +19,14 @@ std::vector<uint8_t> genNNLoadState(uint64_t cmdBufferAddr) {
   //   gcmSETSINGLECTRLSTATE_NEW(..., gcregPSTriggerNN2RegAddrs,
   //       gcmSETFIELD(..., COMMAND_BUFFER_ADDR47_T032, CmdAddress >> 32));
   // Bytes in buffer: 0x0801051d, then cmdBufferAddr[47:32].
-  appendLoadState(loadStateBuf, kRegPsTriggerNn2,
-                  static_cast<uint32_t>(cmdBufferAddr >> 32));
+  const uint32_t cmdHi = static_cast<uint32_t>(cmdBufferAddr >> 32);
+
+  // Whole 32-bit data word (no sub-field):
+  appendLoadState(loadStateBuf, kRegPsTriggerNn2, cmdHi);
+
+  // Sub-field 31:17 — give it a short name once, then one short call:
+  // #define NN_ADDR_HI  31:17
+  // lsPut(loadStateBuf, kRegPsTriggerNn2, NN_ADDR_HI, cmdHi);
 
   // Keep appending into the same buffer:
   // appendLoadState(loadStateBuf, otherReg, otherValue);

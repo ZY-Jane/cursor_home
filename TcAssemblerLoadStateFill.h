@@ -101,3 +101,17 @@ inline void appendFeEnd(std::vector<uint8_t> &buf) {
 } // namespace tc_assembler
 } // namespace acuity
 } // namespace mlir
+
+// Short wrappers for header ranges like 31:17 (high:low, same as HAL).
+// Macros have no namespace; call from anywhere after including this file.
+//
+//   #define NN_ADDR_HI  31:17          // short alias; do not paste the HAL name
+//   uint32_t w = lsSet(0, NN_ADDR_HI, cmdHi);
+//   lsPut(buf, kRegPsTriggerNn2, NN_ADDR_HI, cmdHi);
+#define lsSet(word, bits, val)                                                 \
+  ::mlir::acuity::tc_assembler::setField((word), (0 ? bits), (1 ? bits),       \
+                                         (uint32_t)(val))
+
+#define lsPut(buf, reg, bits, val)                                             \
+  ::mlir::acuity::tc_assembler::appendLoadState((buf), (reg),                   \
+                                               lsSet(0, bits, val))
