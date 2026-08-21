@@ -1,11 +1,11 @@
 // TcAssemblerLoadStateFill.h
-// Copy into mlir::acuity::tc_assembler (header-only).
+// Copy into BigMma loadStateFill.h (only included by loadStateFill.cpp).
 //
-// HAL uses __gcmSTART / __gcmEND, not start/end: `#define end(` breaks
-// string::end() in every TU that includes this header.
+// 31:17 ranges MUST stay macros (LS_START / LS_END). Do not turn setField
+// into a C++ function that takes one integer "field" — 31:27 cannot be a
+// function argument, and you will get a header like 0x00000428 (address only).
 //
-//   #define NN_ADDR_HI  31:17
-//   word = setField(word, NN_ADDR_HI, cmdHi);
+//   word = setField(word, FE_OPCODE, 1);
 //   appendLoadState(buf, reg, setField(0, NN_ADDR_HI, cmdHi));
 
 #pragma once
@@ -13,23 +13,34 @@
 #include <cstdint>
 #include <vector>
 
+namespace ls_detail {
+
+constexpr uint32_t packField(uint32_t word, unsigned lo, unsigned hi,
+                             uint32_t value) {
+  unsigned width = hi - lo + 1;
+  uint32_t m = (width >= 32) ? 0xffffffffu : ((1u << width) - 1u);
+  return (word & ~(m << lo)) | ((value & m) << lo);
+}
+
+constexpr uint32_t unpackField(uint32_t word, unsigned lo, unsigned hi) {
+  unsigned width = hi - lo + 1;
+  uint32_t m = (width >= 32) ? 0xffffffffu : ((1u << width) - 1u);
+  return (word >> lo) & m;
+}
+
+} // namespace ls_detail
+
 #define LS_START(reg_field) (0 ? reg_field)
 #define LS_END(reg_field) (1 ? reg_field)
-#define fieldSize(reg_field) (LS_END(reg_field) - LS_START(reg_field) + 1)
-#define fieldAlign(data, reg_field) (((uint32_t)(data)) << LS_START(reg_field))
-#define fieldMask(reg_field)                                                   \
-  ((uint32_t)((fieldSize(reg_field) == 32)                                     \
-                  ? ~0U                                                        \
-                  : (~(~0U << fieldSize(reg_field)))))
 
 #define setField(data, field, value)                                           \
-  ((((uint32_t)(data)) & ~fieldAlign(fieldMask(field), field)) |               \
-   fieldAlign((uint32_t)(value) & fieldMask(field), field))
+  (::ls_detail::packField((uint32_t)(data), (unsigned)(LS_START(field)),       \
+                          (unsigned)(LS_END(field)), (uint32_t)(value)))
 
 #define getField(data, field)                                                  \
-  ((((uint32_t)(data)) >> LS_START(field)) & fieldMask(field))
+  (::ls_detail::unpackField((uint32_t)(data), (unsigned)(LS_START(field)),      \
+                            (unsigned)(LS_END(field))))
 
-// FE Load State header (high:low). Count is 25:16; bit 26 is FixedPoint.
 #define FE_OPCODE 31:27
 #define FE_FIXED_POINT 26:26
 #define FE_COUNT 25:16
@@ -47,8 +58,8 @@ enum FeOpcode : uint32_t {
 
 constexpr uint32_t kRegPsTriggerNn2 = 0x051d;
 
-inline uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1,
-                                    uint32_t fixedPoint = 0) {
+constexpr uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1,
+                                       uint32_t fixedPoint = 0) {
   uint32_t h = 0;
   h = setField(h, FE_OPCODE, kFeOpLoadState);
   h = setField(h, FE_FIXED_POINT, fixedPoint);
@@ -56,6 +67,11 @@ inline uint32_t makeLoadStateHeader(uint32_t regAddr, uint32_t count = 1,
   h = setField(h, FE_ADDRESS, regAddr);
   return h;
 }
+
+static_assert(makeLoadStateHeader(0x051d, 1, 0) == 0x0801051du,
+              "Load State header packing is broken");
+static_assert(makeLoadStateHeader(0x0428, 1, 0) == 0x08010428u,
+              "opcode bits missing — setField must stay a macro");
 
 inline uint32_t makeFeEnd() { return setField(0, FE_OPCODE, kFeOpEnd); }
 
