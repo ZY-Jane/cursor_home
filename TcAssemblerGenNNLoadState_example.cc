@@ -12,13 +12,13 @@ namespace tc_assembler {
 
 // In your tree this is tc_assembler::TriggerParams; here we only take
 // the fields genNNLoadState actually encodes, so the snippet compiles.
-std::vector<uint8_t> genNNLoadState(uint64_t cmdBufferAddr) {
-  std::vector<uint8_t> loadStateBuf;
+std::vector<uint32_t> genNNLoadState(uint64_t cmdBufferAddr) {
+  std::vector<uint32_t> loadStateBuf;
 
   // Same packet as HAL:
   //   gcmSETSINGLECTRLSTATE_NEW(..., gcregPSTriggerNN2RegAddrs,
   //       gcmSETFIELD(..., COMMAND_BUFFER_ADDR47_T032, CmdAddress >> 32));
-  // Bytes in buffer: 0x0801051d, then cmdBufferAddr[47:32].
+  // Words: 0x0801051d, then cmdBufferAddr[47:32].
   const uint32_t cmdHi = static_cast<uint32_t>(cmdBufferAddr >> 32);
 
   // Whole 32-bit data word (no sub-field):

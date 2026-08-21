@@ -5,8 +5,8 @@
 // into a C++ function that takes one integer "field" — 31:27 cannot be a
 // function argument, and you will get a header like 0x00000428 (address only).
 //
-//   word = setField(word, FE_OPCODE, 1);
-//   appendLoadState(buf, reg, setField(0, NN_ADDR_HI, cmdHi));
+// Buffer is vector<uint32_t>: one FE command word per element.
+// Debug: p /x buf[0]  →  0x0801051d
 
 #pragma once
 
@@ -75,26 +75,22 @@ static_assert(makeLoadStateHeader(0x0428, 1, 0) == 0x08010428u,
 
 inline uint32_t makeFeEnd() { return setField(0, FE_OPCODE, kFeOpEnd); }
 
-inline void appendWord(std::vector<uint8_t> &buf, uint32_t word) {
-  buf.push_back(static_cast<uint8_t>(word));
-  buf.push_back(static_cast<uint8_t>(word >> 8));
-  buf.push_back(static_cast<uint8_t>(word >> 16));
-  buf.push_back(static_cast<uint8_t>(word >> 24));
+inline void appendWord(std::vector<uint32_t> &buf, uint32_t word) {
+  buf.push_back(word);
 }
 
-inline void appendWords(std::vector<uint8_t> &buf, const uint32_t *data,
+inline void appendWords(std::vector<uint32_t> &buf, const uint32_t *data,
                         uint32_t n) {
-  for (uint32_t i = 0; i < n; ++i)
-    appendWord(buf, data[i]);
+  buf.insert(buf.end(), data, data + n);
 }
 
-inline void appendLoadState(std::vector<uint8_t> &buf, uint32_t regAddr,
+inline void appendLoadState(std::vector<uint32_t> &buf, uint32_t regAddr,
                             uint32_t data, uint32_t fixedPoint = 0) {
   appendWord(buf, makeLoadStateHeader(regAddr, /*count=*/1, fixedPoint));
   appendWord(buf, data);
 }
 
-inline void appendLoadStateN(std::vector<uint8_t> &buf, uint32_t regAddr,
+inline void appendLoadStateN(std::vector<uint32_t> &buf, uint32_t regAddr,
                              const uint32_t *data, uint32_t count,
                              uint32_t fixedPoint = 0) {
   if (count == 0)
@@ -103,7 +99,7 @@ inline void appendLoadStateN(std::vector<uint8_t> &buf, uint32_t regAddr,
   appendWords(buf, data, count);
 }
 
-inline void appendFeEnd(std::vector<uint8_t> &buf) {
+inline void appendFeEnd(std::vector<uint32_t> &buf) {
   appendWord(buf, makeFeEnd());
 }
 
