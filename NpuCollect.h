@@ -1,8 +1,9 @@
 // NpuCollect.h
 // Collect-phase definitions for one NPU launch (C++ classes, private members).
 //
-// NpuLaunchCollector = bag for one launch (NN now; shader/FFD/DMA later).
-// NnLaunchEntry      = one NN piece (identity + loadStateBuf).
+// NpuLaunchCollector = ordered timeline for one launch (NN + FFD + ...).
+// NnLaunchEntry / FfdLaunchEntry = one piece's payload (no ordinal; index in
+// the collector is the order).
 // collectNpuLaunch → collectNpuLaunchBlocks → collectNpuLaunchBlockOps
 // serializeNbg       = later: write NBG bytes from the collector.
 
@@ -10,6 +11,7 @@
 
 #include <cstdint>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "llvm/ADT/ArrayRef.h"
@@ -81,23 +83,17 @@ private:
   bool multiCoreSync_ = false;
 };
 
-/// One NN piece in a launch: identity + loadState bytes.
+/// One NN piece: identity + loadState bytes. Order lives on the collector.
 class NnLaunchEntry {
 public:
   NnLaunchEntry() = default;
 
-  NnLaunchEntry(int64_t ordinal, Operation *op, Location loc,
-                std::vector<uint8_t> loadStateBuf)
-      : ordinal_(ordinal), op_(op), loc_(loc),
-        loadStateBuf_(std::move(loadStateBuf)) {}
+  NnLaunchEntry(Operation *op, Location loc, std::vector<uint8_t> loadStateBuf)
+      : op_(op), loc_(loc), loadStateBuf_(std::move(loadStateBuf)) {}
 
   /// Convenience: take loc from op (op must be non-null).
-  NnLaunchEntry(int64_t ordinal, Operation *op,
-                std::vector<uint8_t> loadStateBuf)
-      : NnLaunchEntry(ordinal, op, op->getLoc(), std::move(loadStateBuf)) {}
-
-  int64_t getOrdinal() const { return ordinal_; }
-  void setOrdinal(int64_t v) { ordinal_ = v; }
+  NnLaunchEntry(Operation *op, std::vector<uint8_t> loadStateBuf)
+      : NnLaunchEntry(op, op->getLoc(), std::move(loadStateBuf)) {}
 
   Operation *getOp() const { return op_; }
   void setOp(Operation *v) { op_ = v; }
@@ -112,40 +108,79 @@ public:
   }
 
 private:
-  int64_t ordinal_ = -1;
   Operation *op_ = nullptr;
   Location loc_;
   std::vector<uint8_t> loadStateBuf_;
 };
 
-/// Materials for one NPU launch. NN now; shader / FFD / DMA later.
-/// NBG blob is written later by serializeNbg.
+/// One FFD piece. Fill with setters, then collector.add(std::move(e)).
+class FfdLaunchEntry {
+public:
+  FfdLaunchEntry() = default;
+
+  FfdLaunchEntry(Operation *op, Location loc, std::vector<uint8_t> buf)
+      : op_(op), loc_(loc), buf_(std::move(buf)) {}
+
+  FfdLaunchEntry(Operation *op, std::vector<uint8_t> buf)
+      : FfdLaunchEntry(op, op->getLoc(), std::move(buf)) {}
+
+  Operation *getOp() const { return op_; }
+  void setOp(Operation *v) { op_ = v; }
+
+  Location getLoc() const { return loc_; }
+  void setLoc(Location v) { loc_ = v; }
+
+  ArrayRef<uint8_t> getBuf() const { return buf_; }
+  MutableArrayRef<uint8_t> getBuf() { return buf_; }
+  void setBuf(std::vector<uint8_t> v) { buf_ = std::move(v); }
+
+private:
+  Operation *op_ = nullptr;
+  Location loc_;
+  std::vector<uint8_t> buf_;
+};
+
+enum class LaunchKind { NN, FFD };
+
+/// One slot on the launch timeline. Caller converts with get_if / get / visit.
+using LaunchPiece = std::variant<NnLaunchEntry, FfdLaunchEntry>;
+
+inline LaunchKind getLaunchKind(const LaunchPiece &piece) {
+  if (std::holds_alternative<NnLaunchEntry>(piece))
+    return LaunchKind::NN;
+  return LaunchKind::FFD;
+}
+
+/// Materials for one NPU launch. Walk order is the serialize order
+/// (e.g. NN, FFD, NN). Shader / DMA: add another entry type to LaunchPiece.
 class NpuLaunchCollector {
 public:
   NpuLaunchCollector() = default;
 
-  void clear() { nnEntries_.clear(); }
+  void clear() { entries_.clear(); }
 
+  /// Index the next add() will occupy. Same as size() before that add.
   int64_t nextOrdinal() const {
-    return static_cast<int64_t>(nnEntries_.size());
+    return static_cast<int64_t>(entries_.size());
   }
 
-  void add(NnLaunchEntry entry) { nnEntries_.push_back(std::move(entry)); }
+  void add(NnLaunchEntry entry) { entries_.push_back(std::move(entry)); }
+  void add(FfdLaunchEntry entry) { entries_.push_back(std::move(entry)); }
 
-  size_t size() const { return nnEntries_.size(); }
-  bool empty() const { return nnEntries_.empty(); }
+  size_t size() const { return entries_.size(); }
+  bool empty() const { return entries_.empty(); }
 
-  ArrayRef<NnLaunchEntry> getNnEntries() const { return nnEntries_; }
-  MutableArrayRef<NnLaunchEntry> getNnEntries() { return nnEntries_; }
+  ArrayRef<LaunchPiece> getEntries() const { return entries_; }
+  MutableArrayRef<LaunchPiece> getEntries() { return entries_; }
 
-  NnLaunchEntry &getNnEntry(size_t i) { return nnEntries_[i]; }
-  const NnLaunchEntry &getNnEntry(size_t i) const { return nnEntries_[i]; }
+  LaunchPiece &getEntry(size_t i) { return entries_[i]; }
+  const LaunchPiece &getEntry(size_t i) const { return entries_[i]; }
 
-  NnLaunchEntry &back() { return nnEntries_.back(); }
-  const NnLaunchEntry &back() const { return nnEntries_.back(); }
+  LaunchPiece &back() { return entries_.back(); }
+  const LaunchPiece &back() const { return entries_.back(); }
 
 private:
-  llvm::SmallVector<NnLaunchEntry, 8> nnEntries_;
+  llvm::SmallVector<LaunchPiece, 8> entries_;
 };
 
 //===----------------------------------------------------------------------===//

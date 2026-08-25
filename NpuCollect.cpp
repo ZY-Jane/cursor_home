@@ -45,7 +45,7 @@ LogicalResult mlir::acuity::npu::collectNpuLaunchBlockOps(
     if (!triggerOp)
       continue;
 
-    // Later: also collect shader / FFD / DMA / cmdBuffer / coefData.
+    // Add FFD/shader/DMA in this same loop (walk order = launch order).
 
     TriggerParams triggerParams;
     if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
@@ -55,8 +55,16 @@ LogicalResult mlir::acuity::npu::collectNpuLaunchBlockOps(
     if (failed(emitLoadState(triggerParams, loadStateBuf)))
       return failure();
 
-    collector.add(NnLaunchEntry(collector.nextOrdinal(), &op,
-                                std::move(loadStateBuf)));
+    NnLaunchEntry nn;
+    nn.setOp(&op);
+    nn.setLoadStateBuf(std::move(loadStateBuf));
+    collector.add(std::move(nn));
+
+    // FFD, when the real op exists:
+    // FfdLaunchEntry ffd;
+    // ffd.setOp(&op);
+    // ffd.setBuf(...);
+    // collector.add(std::move(ffd));
   }
   return success();
 }
@@ -91,8 +99,16 @@ LogicalResult
 mlir::acuity::npu::serializeNbg(const NpuLaunchCollector &collector,
                                 std::vector<uint8_t> &nbgOut) {
   nbgOut.clear();
-  // for (const NnLaunchEntry &e : collector.getNnEntries()) {
-  //   use e.getOrdinal(), e.getLoadStateBuf()
+  // for (size_t i = 0; i < collector.size(); ++i) {
+  //   const LaunchPiece &piece = collector.getEntry(i);
+  //   switch (getLaunchKind(piece)) {
+  //   case LaunchKind::NN:
+  //     append(nbgOut, std::get<NnLaunchEntry>(piece).getLoadStateBuf());
+  //     break;
+  //   case LaunchKind::FFD:
+  //     append(nbgOut, std::get<FfdLaunchEntry>(piece).getBuf());
+  //     break;
+  //   }
   // }
   (void)collector;
   return success();
