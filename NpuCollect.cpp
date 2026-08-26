@@ -37,34 +37,64 @@ mlir::acuity::npu::emitLoadState(const TriggerParams &params,
   return success();
 }
 
+LogicalResult mlir::acuity::npu::fillWaitParams(WaitParams &params,
+                                                nn::WaitOp wait,
+                                                const HardwareInfo &hwInfo,
+                                                int64_t coreId) {
+  params = WaitParams();
+  params.setCoreId(coreId);
+  params.setHwInfo(&hwInfo);
+  // params.setEventId(wait.getEventId());
+  (void)wait;
+  return success();
+}
+
+LogicalResult
+mlir::acuity::npu::emitWaitLoadState(const WaitParams &params,
+                                     std::vector<uint8_t> &loadStateBuf) {
+  loadStateBuf.clear();
+  // loadStateBuf = bytes of BigMma / tc_assembler::genWaitLoadState(params);
+  (void)params;
+  return success();
+}
+
 LogicalResult mlir::acuity::npu::collectNpuLaunchBlockOps(
     Block &block, NpuLaunchCollector &collector, const HardwareInfo &hwInfo,
     int64_t coreId) {
   for (Operation &op : block) {
-    auto triggerOp = dyn_cast<nn::TriggerOp>(&op);
-    if (!triggerOp)
+    if (auto triggerOp = dyn_cast<nn::TriggerOp>(&op)) {
+      TriggerParams triggerParams;
+      if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
+        return failure();
+
+      std::vector<uint8_t> loadStateBuf;
+      if (failed(emitLoadState(triggerParams, loadStateBuf)))
+        return failure();
+
+      NnLaunchEntry nn;
+      nn.setOp(&op);
+      nn.setLoadStateBuf(std::move(loadStateBuf));
+      collector.add(std::move(nn));
       continue;
+    }
 
-    // Add FFD/shader/DMA in this same loop (walk order = launch order).
+    if (auto waitOp = dyn_cast<nn::WaitOp>(&op)) {
+      WaitParams waitParams;
+      if (failed(fillWaitParams(waitParams, waitOp, hwInfo, coreId)))
+        return failure();
 
-    TriggerParams triggerParams;
-    if (failed(fillTriggerParams(triggerParams, triggerOp, hwInfo, coreId)))
-      return failure();
+      std::vector<uint8_t> loadStateBuf;
+      if (failed(emitWaitLoadState(waitParams, loadStateBuf)))
+        return failure();
 
-    std::vector<uint8_t> loadStateBuf;
-    if (failed(emitLoadState(triggerParams, loadStateBuf)))
-      return failure();
+      WaitLaunchEntry wait;
+      wait.setOp(&op);
+      wait.setLoadStateBuf(std::move(loadStateBuf));
+      collector.add(std::move(wait));
+      continue;
+    }
 
-    NnLaunchEntry nn;
-    nn.setOp(&op);
-    nn.setLoadStateBuf(std::move(loadStateBuf));
-    collector.add(std::move(nn));
-
-    // FFD, when the real op exists:
-    // FfdLaunchEntry ffd;
-    // ffd.setOp(&op);
-    // ffd.setBuf(...);
-    // collector.add(std::move(ffd));
+    // FFD / shader / DMA: same loop, same add().
   }
   return success();
 }
@@ -107,6 +137,9 @@ mlir::acuity::npu::serializeNbg(const NpuLaunchCollector &collector,
   //     break;
   //   case LaunchKind::FFD:
   //     append(nbgOut, std::get<FfdLaunchEntry>(piece).getBuf());
+  //     break;
+  //   case LaunchKind::Wait:
+  //     append(nbgOut, std::get<WaitLaunchEntry>(piece).getLoadStateBuf());
   //     break;
   //   }
   // }

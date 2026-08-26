@@ -42,6 +42,14 @@ std::vector<uint32_t> genNNLoadState(uint64_t cmdBufferAddr) {
 // or, once genNNLoadState takes TriggerParams:
 //   loadStateBuf = tc_assembler::genNNLoadState(params);
 
+// Parallel packer for the standalone wait op (BigMma: FillWaitLoadState /
+// genWaitLoadState). Do not fold this into genNNLoadState.
+// std::vector<uint32_t> genWaitLoadState(int64_t eventId) {
+//   std::vector<uint32_t> loadStateBuf;
+//   appendLoadState(loadStateBuf, kRegWaitEvent, /* fields from eventId */);
+//   return loadStateBuf;
+// }
+
 } // namespace tc_assembler
 } // namespace acuity
 } // namespace mlir

@@ -1,9 +1,9 @@
 // NpuCollect.h
 // Collect-phase definitions for one NPU launch (C++ classes, private members).
 //
-// NpuLaunchCollector = ordered timeline for one launch (NN + FFD + ...).
-// NnLaunchEntry / FfdLaunchEntry = one piece's payload (no ordinal; index in
-// the collector is the order).
+// NpuLaunchCollector = ordered timeline for one launch (NN + Wait + FFD + ...).
+// *LaunchEntry = one piece's payload (no ordinal; index in the collector is
+// the order).
 // collectNpuLaunch → collectNpuLaunchBlocks → collectNpuLaunchBlockOps
 // serializeNbg       = later: write NBG bytes from the collector.
 
@@ -29,6 +29,7 @@ namespace acuity {
 class HardwareInfo;
 namespace nn {
 class TriggerOp;
+class WaitOp; // replace with the real wait op name from ODS
 } // namespace nn
 } // namespace acuity
 } // namespace mlir
@@ -81,6 +82,26 @@ private:
   uint32_t commandBufferSize_ = 0;
   int64_t eventId_ = 0;
   bool multiCoreSync_ = false;
+};
+
+/// Inputs for genWaitLoadState. Read from the wait op in fillWaitParams.
+class WaitParams {
+public:
+  WaitParams() = default;
+
+  int64_t getCoreId() const { return coreId_; }
+  void setCoreId(int64_t v) { coreId_ = v; }
+
+  const HardwareInfo *getHwInfo() const { return hwInfo_; }
+  void setHwInfo(const HardwareInfo *v) { hwInfo_ = v; }
+
+  int64_t getEventId() const { return eventId_; }
+  void setEventId(int64_t v) { eventId_ = v; }
+
+private:
+  int64_t coreId_ = 0;
+  const HardwareInfo *hwInfo_ = nullptr;
+  int64_t eventId_ = 0;
 };
 
 /// One NN piece: identity + loadState bytes. Order lives on the collector.
@@ -140,15 +161,47 @@ private:
   std::vector<uint8_t> buf_;
 };
 
-enum class LaunchKind { NN, FFD };
+/// One wait-event piece. Independent op on the timeline (e.g. NN, Wait, NN).
+class WaitLaunchEntry {
+public:
+  WaitLaunchEntry() = default;
+
+  WaitLaunchEntry(Operation *op, Location loc, std::vector<uint8_t> loadStateBuf)
+      : op_(op), loc_(loc), loadStateBuf_(std::move(loadStateBuf)) {}
+
+  WaitLaunchEntry(Operation *op, std::vector<uint8_t> loadStateBuf)
+      : WaitLaunchEntry(op, op->getLoc(), std::move(loadStateBuf)) {}
+
+  Operation *getOp() const { return op_; }
+  void setOp(Operation *v) { op_ = v; }
+
+  Location getLoc() const { return loc_; }
+  void setLoc(Location v) { loc_ = v; }
+
+  ArrayRef<uint8_t> getLoadStateBuf() const { return loadStateBuf_; }
+  MutableArrayRef<uint8_t> getLoadStateBuf() { return loadStateBuf_; }
+  void setLoadStateBuf(std::vector<uint8_t> v) {
+    loadStateBuf_ = std::move(v);
+  }
+
+private:
+  Operation *op_ = nullptr;
+  Location loc_;
+  std::vector<uint8_t> loadStateBuf_;
+};
+
+enum class LaunchKind { NN, FFD, Wait };
 
 /// One slot on the launch timeline. Caller converts with get_if / get / visit.
-using LaunchPiece = std::variant<NnLaunchEntry, FfdLaunchEntry>;
+using LaunchPiece =
+    std::variant<NnLaunchEntry, FfdLaunchEntry, WaitLaunchEntry>;
 
 inline LaunchKind getLaunchKind(const LaunchPiece &piece) {
   if (std::holds_alternative<NnLaunchEntry>(piece))
     return LaunchKind::NN;
-  return LaunchKind::FFD;
+  if (std::holds_alternative<FfdLaunchEntry>(piece))
+    return LaunchKind::FFD;
+  return LaunchKind::Wait;
 }
 
 /// Materials for one NPU launch. Walk order is the serialize order
@@ -166,6 +219,7 @@ public:
 
   void add(NnLaunchEntry entry) { entries_.push_back(std::move(entry)); }
   void add(FfdLaunchEntry entry) { entries_.push_back(std::move(entry)); }
+  void add(WaitLaunchEntry entry) { entries_.push_back(std::move(entry)); }
 
   size_t size() const { return entries_.size(); }
   bool empty() const { return entries_.empty(); }
@@ -195,6 +249,13 @@ LogicalResult fillTriggerParams(TriggerParams &params, nn::TriggerOp trigger,
 /// Pack loadState into the caller's vector (out-param, filled in place).
 LogicalResult emitLoadState(const TriggerParams &params,
                             std::vector<uint8_t> &loadStateBuf);
+
+LogicalResult fillWaitParams(WaitParams &params, nn::WaitOp wait,
+                             const HardwareInfo &hwInfo, int64_t coreId = 0);
+
+/// Pack wait loadState; Codegen calls BigMma / tc_assembler::genWaitLoadState.
+LogicalResult emitWaitLoadState(const WaitParams &params,
+                                std::vector<uint8_t> &loadStateBuf);
 
 /// Walk a dispatch: collectNpuLaunch → collectNpuLaunchBlocks →
 /// collectNpuLaunchBlockOps. Fills NpuLaunchCollector. Does not write NBG.
